@@ -168,9 +168,60 @@ class RDMAReceiver(Control):
                         ],
                         action)
                 ])
+            
+    def add_parent(self, parent_port, parent_ip, parent_mac, 
+                       switch_level, switch_rank, session_id):
+        ''' Add SwitchML connection between this switch and the parent
+        '''
 
-        # Save worker id
-        self.worker_ids.append(worker_id)
+        # add entry for each opcode for each worker
+        for opcode, action in [
+            (RDMAOpcode.UC_RDMA_WRITE_ONLY,
+             'Ingress.rdma_receiver.only_packet'),
+            (RDMAOpcode.UC_RDMA_WRITE_ONLY_IMMEDIATE,
+             'Ingress.rdma_receiver.only_packet_with_immediate'),
+            (RDMAOpcode.UC_RDMA_WRITE_FIRST,
+             'Ingress.rdma_receiver.first_packet'),
+            (RDMAOpcode.UC_RDMA_WRITE_MIDDLE,
+             'Ingress.rdma_receiver.middle_packet'),
+            (RDMAOpcode.UC_RDMA_WRITE_LAST,
+             'Ingress.rdma_receiver.last_packet'),
+            (RDMAOpcode.UC_RDMA_WRITE_LAST_IMMEDIATE,
+             'Ingress.rdma_receiver.last_packet_with_immediate')
+        ]:
+
+            self.table.entry_add(
+                self.target,
+                [
+                    self.table.make_key([
+                        self.gc.KeyTuple('$MATCH_PRIORITY', 10),
+                        self.gc.KeyTuple('hdr.ipv4.src_addr', parent_ip),
+                        self.gc.KeyTuple('hdr.ipv4.dst_addr', self.switch_ip),
+                        self.gc.KeyTuple('hdr.ib_bth.partition_key',
+                                         session_id),
+                        self.gc.KeyTuple('hdr.ib_bth.opcode', opcode),
+                        # set qpn bits to zero because we don't need them for inter-switch communication
+                        self.gc.KeyTuple('hdr.ib_bth.dst_qp', 0,
+                                         0xff0000)
+                    ])
+                ],
+                [
+                    self.table.make_data(
+                        [
+                            self.gc.DataTuple('mgid', session_id),
+                            self.gc.DataTuple('worker_type', WorkerType.ROCEv2),
+                            self.gc.DataTuple('worker_id', 0),
+                            self.gc.DataTuple('num_workers', 0),
+                            self.gc.DataTuple('worker_bitmap', 0),
+                            self.gc.DataTuple('packet_size',
+                                              0),
+                            # Clear direct counter
+                            self.gc.DataTuple('$COUNTER_SPEC_BYTES', 0),
+                            self.gc.DataTuple('$COUNTER_SPEC_PKTS', 0)
+                        ],
+                        action)
+                ])
+
         return (True, None)
 
     def get_workers_counter(self, worker_id=None):

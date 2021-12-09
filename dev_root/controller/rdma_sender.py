@@ -176,6 +176,25 @@ class RDMASender(Control):
 
         return (True, None)
 
+    def add_parent(self, parent_port, parent_ip, parent_mac, 
+                       switch_level, switch_rank, session_id):
+        ''' Add SwitchML connection between this switch and the parent
+        '''
+
+        # Add entry to fill in headers for RoCE packet
+        self.create_roce_packet.entry_add(self.target, [
+            self.create_roce_packet.make_key(
+                [self.gc.KeyTuple('eg_md.switchml_md.worker_id', 0)])
+        ], [
+            self.create_roce_packet.make_data([
+                self.gc.DataTuple('dest_mac', parent_mac),
+                self.gc.DataTuple('dest_ip', parent_ip),
+                self.gc.DataTuple('rkey', 0)
+            ], 'Egress.rdma_sender.fill_in_roce_write_fields')
+        ])
+
+        return (True, None)
+
     def get_workers_counter(self, worker_id=None):
         ''' Get the current values of sent packets/bytes per RDMA worker.
             If a worker ID is provided, it will return only the values for that

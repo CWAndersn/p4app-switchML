@@ -343,6 +343,19 @@ class GRPCServer(switchml_pb2_grpc.SessionServicer,
         return switchml_pb2.UdpSessionResponse(session_id=request.session_id,
                                                mac=switch_mac,
                                                ipv4=switch_ipv4)
+    
+    def SwitchSession(self, request, context):
+        #TODO: use request information to establish a connection
+
+        switch_mac, switch_ipv4 = self.ctrl.get_switch_mac_and_ip()
+        switch_mac = int(switch_mac.replace(':', ''), 16)
+        switch_ipv4 = int(ipaddress.ip_address(switch_ipv4))
+
+        return switchml_pb2.SwitchSessionResponse(
+            session_id=request.session_id,
+            mac=switch_mac,
+            ipv4=switch_ipv4
+            )        
 
 
 if __name__ == '__main__':

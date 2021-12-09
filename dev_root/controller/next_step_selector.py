@@ -57,7 +57,7 @@ class NextStepSelector(Control):
         super(NextStepSelector, self)._clear()
         self.reset_counters()
 
-    def add_default_entries(self):
+    def add_default_entries(self, parent_port=None):
         ''' Add default entries '''
 
         # Special recirculation ports used for harvest passes
@@ -121,7 +121,11 @@ class NextStepSelector(Control):
             ## Harvest pass 7: final pass
             ## Read final 128B and broadcast any HARVEST packets that are not
             ## retransmitted and are the last packet
-            (               None, None, PacketType.HARVEST7,  Flag.LAST,    0, 22, 'broadcast', None),
+            
+            #removing this entry because it broadcasts the result down. We only want to do this if this is the top
+            #level switch, otherwise we want to carry the result upward
+            #(               None, None, PacketType.HARVEST7,  Flag.LAST,    0, 22, 'broadcast', None),
+            
             ## First packet, not a retranmsmission
             ## (shouldn't ever get here, because the packet would be dropped in CONSUME)
             (               None, None, PacketType.HARVEST7, Flag.FIRST,    0, 23, 'drop', None),
@@ -131,6 +135,14 @@ class NextStepSelector(Control):
             (               None, None, PacketType.HARVEST7,       None, None, 25, 'drop', None)
         ])
         # yapf: enable
+
+        #once complete, where the packet is sent depends on whether or not this switch has a parent
+        if parent_port is None:
+            #if no parent, this is the top level switch, and we should broadcast
+            entries.append((None, None, PacketType.HARVEST7,  Flag.LAST,    0, 22, 'broadcast', None))
+        else:
+            #if there is a parent, carry the result upward
+            entries.append((None, None, PacketType.HARVEST7,  Flag.LAST,    0, 22, 'carry_upward', parent_port))
 
         for e in entries:
             success, error_msg = self.add_entry(

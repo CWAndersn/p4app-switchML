@@ -109,6 +109,17 @@ control NextStepSelector(
         recirculate_for_harvest(packet_type_t.HARVEST7, recirc_port);
     }
 
+    action carry_upward(PortId_t parent_port) {
+        hdr.d1.setInvalid();
+
+        //send this packet to the parent port
+        ig_tm_md.ucast_egress_port = parent_port;
+        ig_tm_md.bypass_egress = 1w1;
+
+	//set the packet type to CONSUME0 so it is accumulated by the parent
+        ig_md.switchml_md.packet_type = paket_type_t.CONSUME0;
+    }
+
     action finish_consume() {
         ig_dprsr_md.drop_ctl[0:0] = 1;
         count_consume = true;
@@ -170,6 +181,7 @@ control NextStepSelector(
             broadcast;
             retransmit;
             drop;
+            carry_upward;
         }
         const default_action = drop();
         size = 128;

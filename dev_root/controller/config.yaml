@@ -1,0 +1,9 @@
+program: "SwitchMLConnora"
+bfrt-ip: "127.0.0.1"
+bfrt-port: 50052
+switch-mac: "00:11:22:33:44:55"
+switch-ip: "10.0.0.254"
+parent-port: "1/0"
+switch-level: 1
+switch-rank: 1
+session-id: 0

@@ -46,6 +46,10 @@ from grpc_server import GRPCServer
 from cli import Cli
 from common import front_panel_regex, mac_address_regex, validate_ip
 
+import grpc
+
+import switchml_pb2
+import switchml_pb2_grpc
 
 class SwitchML(object):
     '''SwitchML controller'''
@@ -88,7 +92,16 @@ class SwitchML(object):
         bfrt_ip,
         bfrt_port,
         ports_file,
+        parent_port,
+        switch_level,
+        switch_rank,
+        session_id
     ):
+        
+        self.parent_port = parent_port
+        self.switch_level = switch_level
+        self.switch_rank = switch_rank
+        self.session_id = session_id
 
         # Device 0
         self.dev = 0
@@ -557,6 +570,63 @@ class SwitchML(object):
 
         return (True, None)
 
+    def add_parent(self, parent_ip, parent_mac):
+        '''
+        Configures the connection between this switch and the parent switch
+        in the RDMASender and RDMAReceiver P4 tables
+        '''
+    
+        # Add RDMA receiver/sender entries
+        success, error_msg = self.rdma_receiver.add_parent(
+            self.parent_port,
+            parent_ip,
+            parent_mac,
+            self.switch_level,
+            self.switch_rank,
+            self.session_id
+        )
+        if not success:
+            return (False, error_msg)
+
+        self.rdma_sender.add_parent(
+            self.parent_port,
+            parent_ip,
+            parent_mac,
+            self.switch_level,
+            self.switch_rank,
+            self.session_id
+        )
+        
+        return (True, None)
+
+    def send_switch_request(self):
+        '''
+        Sends a switch request proto to the parent switch in the heirarchy to
+        establish a connection between the switches
+        '''
+        
+        #create an insecure channel to the server
+        with grpc.insecure_channel('[::]:50051') as channel:
+            #create a callable stub
+            connect_callable = channel.unary_unary(switchml_pb2.SwitchSession)
+            
+            #create a switch session request to establish a connection between the
+            #parent and child switch
+            request = switchml_pb2.SwitchSessionRequest(
+                    session_id=self.session_id,
+                    rank=self.rank,
+                    num_workers=self.num_workers,
+                    mac=self.switch_mac,
+                    ipv4=self.switch_ipv4
+                    )
+            
+            response = connect_callable(request)
+            
+            if response is None:
+                return (False, "No response received from the parent switch")
+            
+            return self.add_parent(response.parent_id, response.parent_mac)
+
     def run(self):
         try:
             # Start listening for RPCs
@@ -592,40 +662,66 @@ if __name__ == '__main__':
 
     # Parse arguments
     argparser = argparse.ArgumentParser(description='SwitchML controller.')
-    argparser.add_argument('--program',
+    
+    argparser.add_argument('--config',
                            type=str,
-                           default='SwitchML',
-                           help='P4 program name. Default: SwitchML')
-    argparser.add_argument(
-        '--bfrt-ip',
-        type=str,
-        default='127.0.0.1',
-        help='Name/address of the BFRuntime server. Default: 127.0.0.1')
-    argparser.add_argument('--bfrt-port',
-                           type=int,
-                           default=50052,
-                           help='Port of the BFRuntime server. Default: 50052')
-    argparser.add_argument(
-        '--switch-mac',
-        type=str,
-        default='00:11:22:33:44:55',
-        help='MAC address of the switch. Default: 00:11:22:33:44:55')
-    argparser.add_argument('--switch-ip',
-                           type=str,
-                           default='10.0.0.254',
-                           help='IP address of the switch. Default: 10.0.0.254')
+                           default='config.yaml',
+                           help='The filename of the config file to load arguments from')
     argparser.add_argument(
         '--ports',
         type=str,
         default='ports.yaml',
         help=
         'YAML file describing machines connected to ports. Default: ports.yaml')
+    
+    argparser.add_argument('--program',
+                           type=str,
+                           help='P4 program name. Default: SwitchML')
+    argparser.add_argument(
+        '--bfrt-ip',
+        type=str,
+        help='Name/address of the BFRuntime server. Default: 127.0.0.1')
+    argparser.add_argument('--bfrt-port',
+                           type=int,
+                           help='Port of the BFRuntime server. Default: 50052')
+    argparser.add_argument(
+        '--switch-mac',
+        type=str,
+        help='MAC address of the switch. Default: 00:11:22:33:44:55')
+    argparser.add_argument('--switch-ip',
+                           type=str,
+                           help='IP address of the switch. Default: 10.0.0.254')
     argparser.add_argument('--log-level',
                            default='INFO',
                            choices=['ERROR', 'WARNING', 'INFO', 'DEBUG'],
                            help='Default: INFO')
-
+    argparser.add_argument('--parent-port',
+                           type=str,
+                           help='The port that the parent node is attached to, if any')
+    argparser.add_argument('--switch-level',
+                           type=int,
+                           help='The level in the hierarchy')
+    argparser.add_argument('--switch-rank',
+                           type=int,
+                           help='The rank of the switch within this level')
+    argparser.add_argument('--session-id',
+                           type=int,
+                           help='The session id of this session(0 unless support for more than 1 session is added)')
+    
     args = argparser.parse_args()
+
+    with open(args.config) as f:
+            configs = yaml.safe_load(f)
+            
+    p4_program = args.program if args.program is not None else configs['program']
+    bfrt_ip = args.bfrt_ip if args.bfrt_ip is not None else configs['bfrt-ip']
+    bfrt_port = args.bfrt_port if args.bfrt_port is not None else configs['bfrt-port']
+    switch_mac = args.switch_mac if args.switch_mac is not None else configs['switch-mac']
+    switch_ip = args.switch_ip if args.switch_ip is not None else configs['switch-ip']
+    parent_port = args.parent_port if args.parent_port is not None else configs['parent-port']
+    switch_level = args.switch_level if args.switch_level is not None else configs['switch-level']
+    switch_rank = args.switch_rank if args.switch_rank is not None else configs['switch-rank']
+    session_id = args.session_id if args.session_id is not None else configs['session-id']
 
     # Configure logging
     numeric_level = getattr(logging, args.log_level.upper(), None)
@@ -639,20 +735,20 @@ if __name__ == '__main__':
                         format=logformat,
                         datefmt='%H:%M:%S')
 
-    args.switch_mac = args.switch_mac.strip().upper()
-    args.switch_ip = args.switch_ip.strip()
-    args.bfrt_ip = args.bfrt_ip.strip()
+    switch_mac = switch_mac.strip().upper()
+    switch_ip = switch_ip.strip()
+    bfrt_ip = bfrt_ip.strip()
 
-    if not mac_address_regex.match(args.switch_mac):
+    if not mac_address_regex.match(switch_mac):
         sys.exit('Invalid Switch MAC address')
-    if not validate_ip(args.switch_ip):
+    if not validate_ip(switch_ip):
         sys.exit('Invalid Switch IP address')
-    if not validate_ip(args.bfrt_ip):
+    if not validate_ip(bfrt_ip):
         sys.exit('Invalid BFRuntime server IP address')
 
     ctrl = SwitchML()
-    ctrl.setup(args.program, args.switch_mac, args.switch_ip, args.bfrt_ip,
-               args.bfrt_port, args.ports)
+    ctrl.setup(p4_program, switch_mac, switch_ip, bfrt_ip,
+               bfrt_port, args.ports, parent_port, switch_level, switch_rank, session_id)
 
     # Start controller
     ctrl.run()

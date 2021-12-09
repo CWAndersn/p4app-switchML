@@ -21,6 +21,7 @@ package switchml_proto;
 service Session {
   rpc RdmaSession (RdmaSessionRequest) returns (RdmaSessionResponse) {}
   rpc UdpSession (UdpSessionRequest) returns (UdpSessionResponse) {}
+  rpc SwitchSession (SwitchSessionRequest) returns (SwitchSessionResponse) {}
 }
 
 service Sync {
@@ -67,6 +68,21 @@ message UdpSessionRequest {
 }
 
 message UdpSessionResponse {
+  uint64 session_id = 1;
+  uint64 mac = 2;
+  uint32 ipv4 = 3;
+}
+
+message SwitchSessionRequest {
+  uint32 session_id = 1;
+  uint32 level = 2;
+  uint32 rank = 3;
+  uint32 num_workers = 4;
+  uint64 mac = 5;
+  uint32 ipv4 = 6;
+}
+
+message SwitchSessionResponse {
   uint64 session_id = 1;
   uint64 mac = 2;
   uint32 ipv4 = 3;
